@@ -4,3 +4,5 @@ version = "0.1.0"
 authors = ["Austin Bonander <austin.bonander@gmail.com>"]
 
 [dependencies]
+algo = { git = "https://github.com/abonander/algo" }
+rand = "*"
