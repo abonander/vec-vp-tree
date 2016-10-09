@@ -1,3 +1,8 @@
+//! An implementation of a [vantage-point tree][vp-tree] backed by a vector.
+//!
+//! [vp-tree]: https://en.wikipedia.org/wiki/Vantage-point_tree
+#![warn(missing_docs)]
+
 extern crate rand;
 extern crate smallvec;
 
@@ -7,11 +12,15 @@ use smallvec::SmallVec;
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use std::mem;
 
 mod select;
 
 const NO_NODE: usize = ::std::usize::MAX;
 
+/// An implementation of a vantage-point tree backed by a vector.
+///
+/// Only bulk insert/removals are provided in order to keep the tree balanced.
 pub struct VpTree<T, D> {
     nodes: Vec<Node>,
     items: Vec<T>,
@@ -35,7 +44,8 @@ impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
         self_
     }
 
-    fn full_rebuild(&mut self) {
+    /// Rebuild the tree
+    pub fn full_rebuild(&mut self) {
         self.nodes.clear();
 
         let len = self.items.len();
@@ -50,7 +60,7 @@ impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
 
     /// Rebuild the tree in [start, end)
     fn rebuild(&mut self, parent_idx: usize, start: usize, end: usize) -> usize {
-        if start + 1 == end { return NO_NODE; }
+        if start + 1 == end || start == end { return NO_NODE; }
 
         if start + 2 == end {
             self.push_node(parent_idx, start, 0);
@@ -75,7 +85,7 @@ impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
             dist_fn.dist(pivot, median_thresh_item)
         };
 
-        let self_idx = self.push_node(parent_idx, start, threshold);
+        let self_idx = self.push_node(start, parent_idx, threshold);
 
         let left_idx = self.rebuild(self_idx, start + 1, pivot_idx + 1);
         let right_idx = self.rebuild(self_idx, pivot_idx + 1, end);
@@ -102,6 +112,7 @@ impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
 
     /// Add `new_items` to the tree and rebuild it.
     pub fn extend<I: IntoIterator<Item = T>>(&mut self, new_items: I) {
+        self.nodes.clear();
         self.items.extend(new_items);
         self.full_rebuild();
     }
@@ -119,6 +130,15 @@ impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
         self_
     }
 
+    /// Iterate over the contained items, dropping them if `ret_fn` returns `false`,
+    /// keeping them otherwise.
+    ///
+    /// The tree will be rebuilt afterwards.
+    pub fn retain<F>(&mut self, ret_fn: F) where F: FnMut(&T) -> bool {
+        self.items.retain(ret_fn);
+        self.full_rebuild();
+    }
+
     pub fn items(&self) -> &[T] {
         &self.items
     }
@@ -133,20 +153,55 @@ impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
         }
     }
 
+    /// Get a vector of the `k` nearest neighbors to `origin`, sorted in ascending order
+    /// by the distance.
     pub fn k_nearest<'t, 'o>(&'t self, origin: &'o T, k: usize) -> Vec<Neighbor<'t, T>> {
-        let mut heap = BinaryHeap::new();
+        if k == 0 {
+            return Vec::new();
+        }
 
         let mut neighbors = self.neighbors(origin, ::std::u64::MAX);
 
-        while let Some(neighbor) = neighbors.next() {
-            heap.push(neighbor);
+        if k == 1 {
+            let mut ret = Vec::new();
 
-            if heap.len() == k {
-                neighbors.radius = heap.pop().unwrap().dist;
+            while let Some(neighbor) = neighbors.next() {
+                if ret.len() == 1 && neighbor < ret[0] {
+                    neighbors.radius = ret[0].dist;
+                    ret[0] = neighbor;
+                } else {
+                    ret.push(neighbor);
+                }
+            }
+
+            return ret;
+        }
+
+        let mut heap = BinaryHeap::with_capacity(k * 2);
+
+        while let Some(neighbor) = neighbors.next() {
+            // Set the radius to the maximum distance in the heap
+            if heap.len() == k - 1 {
+                let mut top = heap.peek_mut().unwrap();
+
+                neighbors.radius = if neighbor > *top {
+                    neighbor.dist
+                } else {
+                    mem::replace(&mut *top, neighbor).dist
+                };
+            } else {
+                heap.push(neighbor);
             }
         }
 
         heap.into_sorted_vec()
+    }
+
+    /// Consume `self` and return the vector of items.
+    ///
+    /// These items may have been rearranged from the order which they were inserted.
+    pub fn into_vec(self) -> Vec<T> {
+        self.items
     }
 }
 
@@ -245,7 +300,6 @@ impl<'t, T: 't> PartialOrd for Neighbor<'t, T> {
     }
 }
 
-
 /// Returns the comparison of the distances only
 impl<'t, T: 't> Ord for Neighbor<'t, T> {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -270,4 +324,11 @@ impl<T, F> VpDist<T> for F where T: Eq, F: Fn(&T, &T) -> u64 {
     fn dist(&self, left: &T, right: &T) -> u64 {
         (self)(left, right)
     }
+}
+
+#[test]
+fn test_k_nearest() {
+    let tree = VpTree::new(0i32 .. 32, |left: &i32, right: &i32| (left - right).abs() as u64);
+    let nearest: Vec<_> = tree.k_nearest(&16, 4).into_iter().map(|neigh| *neigh.item).collect();
+    assert_eq!(nearest, vec![14, 15, 17, 18]);
 }
