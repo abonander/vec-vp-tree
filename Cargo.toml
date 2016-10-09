@@ -5,3 +5,4 @@ authors = ["Austin Bonander <austin.bonander@gmail.com>"]
 
 [dependencies]
 rand = "*"
+smallvec = "*"
