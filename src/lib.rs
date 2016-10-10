@@ -18,6 +18,11 @@ mod select;
 
 const NO_NODE: usize = ::std::usize::MAX;
 
+#[cfg(test)]
+type SplitStack = Vec<usize>;
+#[cfg(not(test))]
+type SplitStack = SmallVec<[usize; 3]>;
+
 /// An implementation of a vantage-point tree backed by a vector.
 ///
 /// Only bulk insert/removals are provided in order to keep the tree balanced.
@@ -147,7 +152,7 @@ impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
         Neighbors {
             tree: self,
             origin: origin,
-            splits: SmallVec::new(),
+            splits: Default::default(),
             current_node: if self.nodes.len() > 0 { 0 } else { NO_NODE },
             radius: radius,
         }
@@ -216,7 +221,7 @@ struct Node {
 pub struct Neighbors<'t, 'o, T: 't + 'o, D: 't> {
     tree: &'t VpTree<T, D>,
     origin: &'o T,
-    splits: SmallVec<[usize; 3]>,
+    splits: SplitStack,
     current_node: usize,
     radius: u64,
 }
