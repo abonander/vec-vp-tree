@@ -10,9 +10,10 @@ use rand::Rng;
 
 use smallvec::SmallVec;
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::mem;
+use std::{cmp, fmt, iter, mem};
 
 mod select;
 
@@ -65,10 +66,10 @@ impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
 
     /// Rebuild the tree in [start, end)
     fn rebuild(&mut self, parent_idx: usize, start: usize, end: usize) -> usize {
-        if start + 1 == end || start == end { return NO_NODE; }
+        if start == end { return NO_NODE; }
 
-        if start + 2 == end {
-            self.push_node(parent_idx, start, 0);
+        if start + 1 == end {
+            return self.push_node(start, parent_idx, 0);
         }
 
         let pivot_idx = rand::thread_rng().gen_range(start, end);
@@ -185,17 +186,9 @@ impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
         let mut heap = BinaryHeap::with_capacity(k * 2);
 
         while let Some(neighbor) = neighbors.next() {
-            // Set the radius to the maximum distance in the heap
-            if heap.len() == k - 1 {
-                let mut top = heap.peek_mut().unwrap();
-
-                neighbors.radius = if neighbor > *top {
-                    neighbor.dist
-                } else {
-                    mem::replace(&mut *top, neighbor).dist
-                };
-            } else {
-                heap.push(neighbor);
+            heap.push(neighbor);
+            if heap.len() == k {
+                neighbors.radius = heap.pop().unwrap().dist;
             }
         }
 
@@ -208,8 +201,80 @@ impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
     pub fn into_vec(self) -> Vec<T> {
         self.items
     }
+
+    pub fn print_tree(&self) where T: fmt::Debug {
+        println!("VpTree {{ len: {} }}", self.items.len());
+        if self.nodes.len() == 0 { println!("[Empty]"); return; }
+
+        println!("Items: {:?}", self.items);
+
+        let lines = self.print_subtrees(0);
+
+        let lines_below = lines.len();
+
+        print_whitespace(lines_below.saturating_sub(1));
+
+        println!("[ {} ]", self.fmt_node(0));
+
+        for (lines_below, line) in lines.into_iter().enumerate().rev() {
+            print_whitespace(lines_below);
+
+            println!("{}", line);
+        }
+    }
+
+    fn print_subtrees(&self, node_idx: usize) -> Vec<String> where T: fmt::Debug {
+        const EMPTY: &'static str = "[ _  _ ]";
+
+        if node_idx == NO_NODE { return vec![EMPTY.into()]; }
+
+        const EMPTY_NODE: &'static str = "_";
+        let mut nodes_line = "[ ".to_string();
+
+        let node = &self.nodes[node_idx];
+
+        if node.left != NO_NODE {
+            nodes_line += &self.fmt_node(node.left);
+        } else {
+            nodes_line.push_str(EMPTY_NODE);
+        }
+
+        nodes_line.push_str("  ");
+
+        if node.right != NO_NODE {
+            nodes_line += &self.fmt_node(node.right);
+        } else {
+            nodes_line.push_str(EMPTY_NODE);
+        }
+
+        nodes_line.push_str(" ]");
+
+        let left_lines = self.print_subtrees(node.left);
+        let right_lines = self.print_subtrees(node.right);
+
+        let lines_below = cmp::max(left_lines.len(), right_lines.len());
+
+        let make_iter = |lines: Vec<String>| lines.into_iter().chain(iter::repeat(EMPTY.into()));
+
+        make_iter(left_lines)
+            .zip(make_iter(right_lines))
+            .take(lines_below)
+            .map(|(left, right)| format!("{}{}", left, right))
+            .chain(iter::once(nodes_line))
+            .collect()
+    }
+
+    fn fmt_node(&self, node_idx: usize) -> String where T: fmt::Debug {
+        let node = &self.nodes[node_idx];
+        format!("{:?}({:?})", self.items[node.idx], node.threshold)
+    }
 }
 
+fn print_whitespace(num: usize) {
+    for _ in 0 .. num { print!("     "); }
+}
+
+#[derive(Debug)]
 struct Node {
     idx: usize,
     parent: usize,
@@ -243,7 +308,9 @@ impl<'t, 'o, T: 't + 'o, D: 't> Iterator for Neighbors<'t, 'o, T, D> where T: Eq
 
             let cur_node = &self.tree.nodes[self.current_node];
 
-            let dist_to_cur = self.tree.dist_fn.dist(&self.origin, &self.tree.items[cur_node.idx]);
+            let item = &self.tree.items[cur_node.idx];
+
+            let dist_to_cur = self.tree.dist_fn.dist(&self.origin, item);
 
             let go_left = dist_to_cur.saturating_sub(self.radius) <= cur_node.threshold;
             let go_right = dist_to_cur.saturating_add(self.radius) >= cur_node.threshold;
@@ -280,11 +347,15 @@ impl<'t, 'o, T: 't + 'o, D: 't> Iterator for Neighbors<'t, 'o, T, D> where T: Eq
 
                     self.current_node = cur_node.right;
                 }
+
+                if go_left {
+                    self.current_node = cur_node.left;
+                }
             }
 
-            if dist_to_cur <= self.radius {
+            if dist_to_cur <= self.radius && self.origin != item {
                 ret = Some(Neighbor {
-                    item: &self.tree.items[cur_node.idx],
+                    item: item,
                     dist: dist_to_cur
                 });
             }
@@ -331,9 +402,33 @@ impl<T, F> VpDist<T> for F where T: Eq, F: Fn(&T, &T) -> u64 {
     }
 }
 
-#[test]
-fn test_k_nearest() {
-    let tree = VpTree::new(0i32 .. 32, |left: &i32, right: &i32| (left - right).abs() as u64);
-    let nearest: Vec<_> = tree.k_nearest(&16, 4).into_iter().map(|neigh| *neigh.item).collect();
-    assert_eq!(nearest, vec![14, 15, 17, 18]);
+#[cfg(test)]
+mod test {
+    use super::VpTree;
+
+    const MAX_TREE_VAL: i32 = 8;
+    const TREE_MEDIAN: i32 = 4;
+
+    fn setup_tree() -> VpTree<i32, fn(&i32, &i32) -> u64> {
+        fn dist(left: &i32, right: &i32) -> u64 {
+            (left - right).abs() as u64
+        }
+
+        VpTree::new(0i32 .. MAX_TREE_VAL, dist)
+    }
+
+    //#[test]
+    fn test_k_nearest() {
+        let tree = setup_tree();
+        let nearest: Vec<_> = tree.k_nearest(&TREE_MEDIAN, 4).into_iter().map(|n| *n.item).collect();
+        assert_eq!(nearest, vec![6, 7, 9, 10]);
+    }
+
+    #[test]
+    fn test_neighbors() {
+        let tree = setup_tree();
+        let mut neighbors: Vec<_> = tree.neighbors(&TREE_MEDIAN, 2).map(|n| *n.item).collect();
+        neighbors.sort();
+        assert_eq!(neighbors, vec![6, 7, 9, 10])
+    }
 }
