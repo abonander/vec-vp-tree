@@ -17,6 +17,8 @@ use std::{cmp, fmt, iter, mem};
 
 mod select;
 
+mod print;
+
 const NO_NODE: usize = ::std::usize::MAX;
 
 #[cfg(test)]
@@ -33,7 +35,7 @@ pub struct VpTree<T, D> {
     dist_fn: D,
 }
 
-impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
+impl<T: fmt::Debug, D: VpDist<T>> VpTree<T, D> {
     pub fn new<I: IntoIterator<Item = T>>(items: I, dist_fn: D) -> Self {
         Self::from_vec(items.into_iter().collect(), dist_fn)
     }
@@ -88,13 +90,18 @@ impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
                 |left, right| dist_fn.dist(pivot, left).cmp(&dist_fn.dist(pivot, right))
             );
 
+
             dist_fn.dist(pivot, median_thresh_item)
         };
 
+        println!("Items (pivot_idx: {}): {:?}", pivot_idx, &self.items[start .. end]);
+
+        let split_idx = start + (end - (start + 1)) / 2;
+
         let self_idx = self.push_node(start, parent_idx, threshold);
 
-        let left_idx = self.rebuild(self_idx, start + 1, pivot_idx + 1);
-        let right_idx = self.rebuild(self_idx, pivot_idx + 1, end);
+        let left_idx = self.rebuild(self_idx, start + 1, split_idx + 1);
+        let right_idx = self.rebuild(self_idx, split_idx + 1, end);
 
         self.nodes[self_idx].left = left_idx;
         self.nodes[self_idx].right = right_idx;
@@ -161,7 +168,7 @@ impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
 
     /// Get a vector of the `k` nearest neighbors to `origin`, sorted in ascending order
     /// by the distance.
-    pub fn k_nearest<'t, 'o>(&'t self, origin: &'o T, k: usize) -> Vec<Neighbor<'t, T>> {
+    pub fn k_nearest<'t, 'o>(&'t self, origin: &'o T, k: usize) -> Vec<Neighbor<'t, T>> where T: Eq {
         if k == 0 {
             return Vec::new();
         }
@@ -201,77 +208,18 @@ impl<T: Eq, D: VpDist<T>> VpTree<T, D> {
     pub fn into_vec(self) -> Vec<T> {
         self.items
     }
-
-    pub fn print_tree(&self) where T: fmt::Debug {
-        println!("VpTree {{ len: {} }}", self.items.len());
-        if self.nodes.len() == 0 { println!("[Empty]"); return; }
-
-        println!("Items: {:?}", self.items);
-
-        let lines = self.print_subtrees(0);
-
-        let lines_below = lines.len();
-
-        print_whitespace(lines_below.saturating_sub(1));
-
-        println!("[ {} ]", self.fmt_node(0));
-
-        for (lines_below, line) in lines.into_iter().enumerate().rev() {
-            print_whitespace(lines_below);
-
-            println!("{}", line);
-        }
-    }
-
-    fn print_subtrees(&self, node_idx: usize) -> Vec<String> where T: fmt::Debug {
-        const EMPTY: &'static str = "[ _  _ ]";
-
-        if node_idx == NO_NODE { return vec![EMPTY.into()]; }
-
-        const EMPTY_NODE: &'static str = "_";
-        let mut nodes_line = "[ ".to_string();
-
-        let node = &self.nodes[node_idx];
-
-        if node.left != NO_NODE {
-            nodes_line += &self.fmt_node(node.left);
-        } else {
-            nodes_line.push_str(EMPTY_NODE);
-        }
-
-        nodes_line.push_str("  ");
-
-        if node.right != NO_NODE {
-            nodes_line += &self.fmt_node(node.right);
-        } else {
-            nodes_line.push_str(EMPTY_NODE);
-        }
-
-        nodes_line.push_str(" ]");
-
-        let left_lines = self.print_subtrees(node.left);
-        let right_lines = self.print_subtrees(node.right);
-
-        let lines_below = cmp::max(left_lines.len(), right_lines.len());
-
-        let make_iter = |lines: Vec<String>| lines.into_iter().chain(iter::repeat(EMPTY.into()));
-
-        make_iter(left_lines)
-            .zip(make_iter(right_lines))
-            .take(lines_below)
-            .map(|(left, right)| format!("{}{}", left, right))
-            .chain(iter::once(nodes_line))
-            .collect()
-    }
-
-    fn fmt_node(&self, node_idx: usize) -> String where T: fmt::Debug {
-        let node = &self.nodes[node_idx];
-        format!("{:?}({:?})", self.items[node.idx], node.threshold)
-    }
 }
 
-fn print_whitespace(num: usize) {
-    for _ in 0 .. num { print!("     "); }
+impl<T: fmt::Debug, D: VpDist<T>> fmt::Debug for VpTree<T, D> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(writeln!(f, "VpTree {{ len: {} }}", self.items.len()));
+
+        if self.nodes.len() == 0 { return f.write_str("[Empty]\n");}
+
+        try!(writeln!(f, "Items: {:?}\nStructure:", self.items));
+
+        print::TreePrinter::new(self).print(f)
+    }
 }
 
 #[derive(Debug)]
@@ -291,13 +239,11 @@ pub struct Neighbors<'t, 'o, T: 't + 'o, D: 't> {
     radius: u64,
 }
 
-impl<'t, 'o, T: 't + 'o, D: 't> Iterator for Neighbors<'t, 'o, T, D> where T: Eq, D: VpDist<T> {
+impl<'t, 'o, T: 't + 'o, D: 't> Iterator for Neighbors<'t, 'o, T, D> where D: VpDist<T> {
     type Item = Neighbor<'t, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut ret = None;
-
-        while let None = ret {
+        loop {
             if self.current_node == NO_NODE {
                 if let Some(&last_split) = self.splits.last() {
                     self.current_node = last_split;
@@ -330,7 +276,7 @@ impl<'t, 'o, T: 't + 'o, D: 't> Iterator for Neighbors<'t, 'o, T, D> where T: Eq
             if dist_to_cur <= cur_node.threshold {
                 if go_left && !already_seen {
                     if go_right {
-                        self.splits.push(self.current_node);
+                        self.push_split();
                     }
 
                     self.current_node = cur_node.left;
@@ -342,7 +288,7 @@ impl<'t, 'o, T: 't + 'o, D: 't> Iterator for Neighbors<'t, 'o, T, D> where T: Eq
             } else {
                 if go_right && !already_seen {
                     if go_left {
-                        self.splits.push(self.current_node);
+                        self.push_split();
                     }
 
                     self.current_node = cur_node.right;
@@ -353,15 +299,22 @@ impl<'t, 'o, T: 't + 'o, D: 't> Iterator for Neighbors<'t, 'o, T, D> where T: Eq
                 }
             }
 
-            if dist_to_cur <= self.radius && self.origin != item {
-                ret = Some(Neighbor {
+            if dist_to_cur <= self.radius && !already_seen {
+                return Some(Neighbor {
                     item: item,
                     dist: dist_to_cur
                 });
             }
         }
 
-        ret
+        None
+    }
+}
+
+impl<'t, 'o, T: 't + 'o, D: 't> Neighbors<'t, 'o, T, D> {
+    fn push_split(&mut self) {
+        self.splits.push(self.current_node);
+        println!("Push split: {}", self.current_node);
     }
 }
 
@@ -370,13 +323,15 @@ pub struct Neighbor<'t, T: 't> {
     pub item: &'t T,
     pub dist: u64,
 }
+
+/// Returns the comparison of the distances only.
 impl<'t, T: 't> PartialOrd for Neighbor<'t, T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-/// Returns the comparison of the distances only
+/// Returns the comparison of the distances only.
 impl<'t, T: 't> Ord for Neighbor<'t, T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.dist.cmp(&other.dist)
@@ -392,11 +347,11 @@ impl<'t, T: 't> PartialEq for Neighbor<'t, T> {
 
 impl<'t, T: 't> Eq for Neighbor<'t, T> {}
 
-pub trait VpDist<T> where T: Eq {
+pub trait VpDist<T> {
     fn dist(&self, left: &T, right: &T) -> u64;
 }
 
-impl<T, F> VpDist<T> for F where T: Eq, F: Fn(&T, &T) -> u64 {
+impl<T, F> VpDist<T> for F where F: Fn(&T, &T) -> u64 {
     fn dist(&self, left: &T, right: &T) -> u64 {
         (self)(left, right)
     }
@@ -427,6 +382,7 @@ mod test {
     #[test]
     fn test_neighbors() {
         let tree = setup_tree();
+        println!("{:?}", tree);
         let mut neighbors: Vec<_> = tree.neighbors(&TREE_MEDIAN, 2).map(|n| *n.item).collect();
         neighbors.sort();
         assert_eq!(neighbors, vec![6, 7, 9, 10])
