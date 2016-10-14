@@ -6,7 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 //
 // Implementation adapted from C++ code at http://stevehanov.ca/blog/index.php?id=130
-// (accessed October 14, 2016). No copyrightor license information is provided,
+// (accessed October 14, 2016). No copyright or license information is provided,
 // so the original code is assumed to be public domain.
 //! An implementation of a [vantage-point tree][vp-tree] backed by a vector.
 //!
@@ -295,19 +295,19 @@ impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D> where D: DistFn<T> {
 
         let dist_to_cur = self.tree.dist_fn.dist(&self.origin, item);
 
-        if self.heap.len() == self.k {
-            self.heap.pop();
-        }
-
         if dist_to_cur < self.radius {
+            if self.heap.len() == self.k {
+                self.heap.pop();
+            }
+
             self.heap.push(Neighbor {
                 item: item,
                 dist: dist_to_cur
             });
-        }
 
-        if self.heap.len() == self.k {
-            self.radius = self.heap.peek().unwrap().dist;
+            if self.heap.len() == self.k {
+                self.radius = self.heap.peek().unwrap().dist;
+            }
         }
 
         let go_left = dist_to_cur.saturating_sub(self.radius) <= cur_node.threshold;
@@ -395,9 +395,8 @@ mod test {
     use super::VpTree;
 
     const MAX_TREE_VAL: i32 = 8;
-    const TREE_MEDIAN: i32 = 4;
-    const RADIUS: u64 = 2;
-    const NEIGHBORS: &'static [i32] = &[2, 3, 5, 6];
+    const ORIGIN: i32 = 4;
+    const NEIGHBORS: &'static [i32] = &[2, 3, 4, 5, 6];
 
     fn setup_tree() -> VpTree<i32, fn(&i32, &i32) -> u64> {
         fn dist(left: &i32, right: &i32) -> u64 {
@@ -410,15 +409,16 @@ mod test {
     #[test]
     fn test_k_nearest() {
         let tree = setup_tree();
-        let nearest: Vec<_> = tree.k_nearest(&TREE_MEDIAN, NEIGHBORS.len())
+
+        println!("Tree: {:?}", tree);
+
+        let nearest: Vec<_> = tree.k_nearest(&ORIGIN, NEIGHBORS.len())
             .into_iter().collect();
 
         println!("Nearest: {:?}", nearest);
 
-        assert_eq!(nearest.len(), NEIGHBORS.len());
-
         for neighbor in nearest {
-            assert!(NEIGHBORS.contains(&neighbor.item), "Was not expecting ");
+            assert!(NEIGHBORS.contains(&neighbor.item), "Was not expecting {:?}", neighbor);
         }
     }
 }
