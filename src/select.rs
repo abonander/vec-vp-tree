@@ -1,16 +1,14 @@
+// Copyright 2016 Austin Bonander
+//
+// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
+// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
+// http://opensource.org/licenses/MIT>, at your option. This file may not be
+// copied, modified, or distributed except according to those terms.
 use std::cmp::Ordering;
 use std::mem;
 
 // The threshold below which qselect_inplace_by() should just sort the slice.
 const SORT_THRESH: usize = 6;
-
-pub fn median_inplace_by<T, F: FnMut(&T, &T) -> Ordering>(data: &mut [T], ord_fn: F) -> &mut T {
-    if data.len() < 3 { return &mut data[0]; }
-
-    let median_idx = data.len() / 2;
-
-    qselect_inplace_by(data, median_idx, ord_fn)
-}
 
 /// Use the Quickselect algorithm, given an ordering function,
 /// to select the `k`th smallest element from `data`. As part of the
@@ -21,7 +19,7 @@ pub fn median_inplace_by<T, F: FnMut(&T, &T) -> Ordering>(data: &mut [T], ord_fn
 ///
 /// ##Panics
 /// If `k` is greater than `data.len()`.
-fn qselect_inplace_by<T, F: FnMut(&T, &T) -> Ordering>(data: &mut [T], k: usize, mut ord_fn: F) -> &mut T {
+pub fn qselect_inplace_by<T, F: FnMut(&T, &T) -> Ordering>(data: &mut [T], k: usize, mut ord_fn: F) -> &mut T {
     let len = data.len();
 
     assert!(k < len, "Called qselect_inplace with k = {} and data length: {}", k, len);

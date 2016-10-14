@@ -1,16 +1,24 @@
+// Copyright 2016 Austin Bonander
+//
+// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
+// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
+// http://opensource.org/licenses/MIT>, at your option. This file may not be
+// copied, modified, or distributed except according to those terms.
+//
+// Implementation adapted from C++ code at http://stevehanov.ca/blog/index.php?id=130
+// (accessed October 14, 2016). No copyrightor license information is provided,
+// so the original code is assumed to be public domain.
 //! An implementation of a [vantage-point tree][vp-tree] backed by a vector.
 //!
 //! [vp-tree]: https://en.wikipedia.org/wiki/Vantage-point_tree
 #![warn(missing_docs)]
 
 extern crate rand;
-extern crate smallvec;
 
 use rand::Rng;
 
-use smallvec::SmallVec;
 
-use std::borrow::Cow;
+use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::{cmp, fmt, iter, mem};
@@ -21,11 +29,6 @@ mod print;
 
 const NO_NODE: usize = ::std::usize::MAX;
 
-#[cfg(test)]
-type SplitStack = Vec<usize>;
-#[cfg(not(test))]
-type SplitStack = SmallVec<[usize; 3]>;
-
 /// An implementation of a vantage-point tree backed by a vector.
 ///
 /// Only bulk insert/removals are provided in order to keep the tree balanced.
@@ -35,7 +38,10 @@ pub struct VpTree<T, D> {
     dist_fn: D,
 }
 
-impl<T: fmt::Debug, D: VpDist<T>> VpTree<T, D> {
+impl<T, D: DistFn<T>> VpTree<T, D> {
+    /// Collect the results of `items` into the tree, and build the tree using `dist_fn`.
+    ///
+    /// If coming straight from a vector, use `from_vec` to avoid a copy.
     pub fn new<I: IntoIterator<Item = T>>(items: I, dist_fn: D) -> Self {
         Self::from_vec(items.into_iter().collect(), dist_fn)
     }
@@ -81,31 +87,32 @@ impl<T: fmt::Debug, D: VpDist<T>> VpTree<T, D> {
         let pivot_idx = rand::thread_rng().gen_range(start, end);
         self.items.swap(start, pivot_idx);
 
+        let median_idx = (end - (start + 1)) / 2;
+
         let threshold = {
             let (pivot, items) = self.items.split_first_mut().unwrap();
 
             // Without this reborrow, the closure will try to borrow all of `self`.
             let dist_fn = &self.dist_fn;
 
-            // This function will partition around the median element so we don't need
-            // as second partial-sort run
-            let median_thresh_item = select::median_inplace_by(
-                items,
+            // This function will partition around the median element
+            let median_thresh_item = select::qselect_inplace_by(
+                items, median_idx,
                 |left, right| dist_fn.dist(pivot, left).cmp(&dist_fn.dist(pivot, right))
             );
-
 
             dist_fn.dist(pivot, median_thresh_item)
         };
 
-        println!("Items (pivot_idx: {}): {:?}", pivot_idx, &self.items[start .. end]);
+        let left_start = start + 1;
 
-        let split_idx = start + 1 + (end - (start + 1)) / 2;
+        let split_idx = left_start + median_idx + 1;
 
         let self_idx = self.push_node(start, parent_idx, threshold);
 
-        let left_idx = self.rebuild(self_idx, start + 1, split_idx + 1);
-        let right_idx = self.rebuild(self_idx, split_idx + 1, end);
+        let left_idx = self.rebuild(self_idx, left_start, split_idx);
+
+        let right_idx = self.rebuild(self_idx, split_idx, end);
 
         self.nodes[self_idx].left = left_idx;
         self.nodes[self_idx].right = right_idx;
@@ -129,7 +136,9 @@ impl<T: fmt::Debug, D: VpDist<T>> VpTree<T, D> {
 
     #[inline(always)]
     fn sanity_check(&self) {
-        assert!(self.nodes.len() == self.items.len(), "`VpTree` was .")
+        assert!(self.nodes.len() == self.items.len(), "Attempting to traverse `VpTree` when it is
+        in an invalid state. This can happen if a panic was thrown while it was being mutated and
+        then caught outside.")
     }
 
     /// Add `new_items` to the tree and rebuild it.
@@ -142,7 +151,7 @@ impl<T: fmt::Debug, D: VpDist<T>> VpTree<T, D> {
     /// Apply a new distance function and rebuild the tree, returning the transformed type.
     ///
     /// The tree will be rebuilt before it is returned.
-    pub fn dist_fn<D_: VpDist<T>>(self, dist_fn: D_) -> VpTree<T, D_> {
+    pub fn dist_fn<D_: DistFn<T>>(self, dist_fn: D_) -> VpTree<T, D_> {
         let mut self_ = VpTree {
             nodes: self.nodes,
             items: self.items,
@@ -166,11 +175,13 @@ impl<T: fmt::Debug, D: VpDist<T>> VpTree<T, D> {
 
     /// Get a slice of the items.
     ///
-    /// ##Note
+    /// ## Note
     /// It is a logic error for an item to be modified in such a way that the item's distance
     /// to any other item, as determined by `D: VpDist<T>`, changes while it is in the tree
     /// without the tree being rebuilt.
     /// This is normally only possible through Cell, RefCell, global state, I/O, or unsafe code.
+    ///
+    /// If you wish to mutate one or more of the contained items, use `.with_mut_items()` instead.
     pub fn items(&self) -> &[T] {
         &self.items
     }
@@ -180,57 +191,42 @@ impl<T: fmt::Debug, D: VpDist<T>> VpTree<T, D> {
     /// The tree will be rebuilt after `mut_fn` returns, in assumption that it will modify one or
     /// more of the contained items such that their distance to others,
     /// as determined by `D: VpDist<T>`, changes.
+    ///
+    /// ## Note
+    /// If a panic is initiated in `mut_fn` and then caught outside this method,
+    /// the tree will need to be manually rebuilt with `.full_rebuild()`.
     pub fn with_mut_items<F>(&mut self, mut_fn: F) where F: FnOnce(&mut [T]) {
         self.nodes.clear();
         mut_fn(&mut self.items);
         self.full_rebuild();
     }
 
-    /// Return an iterator over the items within `radius` distance of `origin`.
-    ///
-    /// ##Note
-    /// `origin` may or may not be in the tree, but if it is, it will be returned in this iterator.
-    ///
-    /// ##Panics
-    /// If the tree was not rebuilt properly. This would only happen if a panic occurred during
-    /// rebuild or one of the mutating functions here, and then was caught.
-    ///
-    /// Call `.full_rebuild()` to restore the tree.
-    pub fn neighbors<'t, 'o>(&'t self, origin: &'o T, radius: u64) -> Neighbors<'t, 'o, T, D> {
-        self.sanity_check();
-
-        Neighbors {
-            tree: self,
-            origin: origin,
-            splits: Default::default(),
-            current_node: if self.nodes.len() > 0 { 0 } else { NO_NODE },
-            radius: radius,
-        }
-    }
-
     /// Get a vector of the `k` nearest neighbors to `origin`, sorted in ascending order
     /// by the distance.
-    pub fn k_nearest<'t, 'o>(&'t self, origin: &'o T, mut k: usize) -> Vec<Neighbor<'t, T>> where T: Eq {
-        if k == 0 {
-            return Vec::new();
+    ///
+    /// ## Note
+    /// If `origin` is contained within the tree, which is allowed by the API contract,
+    /// it will be returned. In this case, it may be preferable to start with a higher `k` and
+    /// filter out duplicate entries.
+    ///
+    /// ## Panics
+    /// If the tree was in an invalid state
+    pub fn k_nearest<'t, O: Borrow<T>>(&'t self, origin: O, mut k: usize) -> Vec<Neighbor<'t, T>> {
+        self.sanity_check();
+
+        let origin = origin.borrow();
+
+        KnnVisitor::new(self, origin, k)
+            .visit_all()
+            .into_vec()
+    }
+
+    fn root(&self) -> usize {
+        if self.nodes.len() > 0 {
+            0
+        } else {
+            NO_NODE
         }
-
-        let mut neighbors = self.neighbors(origin, ::std::u64::MAX);
-
-        let mut heap = BinaryHeap::with_capacity(k * 2);
-
-        while let Some(neighbor) = neighbors.next() {
-            if neighbor.item == origin { k += 1; }
-            if heap.len() == k { heap.pop(); }
-            heap.push(neighbor);
-            if heap.len() == k {
-                neighbors.radius = heap.peek().unwrap().dist;
-            }
-        }
-
-        let mut vec = heap.into_sorted_vec();
-        vec.retain(|n| origin != n.item);
-        vec
     }
 
     /// Consume `self` and return the vector of items.
@@ -241,7 +237,7 @@ impl<T: fmt::Debug, D: VpDist<T>> VpTree<T, D> {
     }
 }
 
-impl<T: fmt::Debug, D: VpDist<T>> fmt::Debug for VpTree<T, D> {
+impl<T: fmt::Debug, D: DistFn<T>> fmt::Debug for VpTree<T, D> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         try!(writeln!(f, "VpTree {{ len: {} }}", self.items.len()));
 
@@ -262,91 +258,86 @@ struct Node {
     threshold: u64,
 }
 
-pub struct Neighbors<'t, 'o, T: 't + 'o, D: 't> {
+struct KnnVisitor<'t, 'o, T: 't + 'o, D: 't> {
     tree: &'t VpTree<T, D>,
     origin: &'o T,
-    splits: SplitStack,
-    current_node: usize,
+    heap: BinaryHeap<Neighbor<'t, T>>,
+    k: usize,
     radius: u64,
 }
 
-impl<'t, 'o, T: 't + 'o, D: 't> Iterator for Neighbors<'t, 'o, T, D> where D: VpDist<T> {
-    type Item = Neighbor<'t, T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let mut already_seen = false;
-
-            if self.current_node == NO_NODE {
-                if let Some(last_split) = self.splits.pop() {
-                    self.current_node = last_split;
-                    already_seen = true;
-                } else {
-                    break;
-                }
-            }
-
-            let cur_node = &self.tree.nodes[self.current_node];
-
-            if cur_node.left == NO_NODE && cur_node.right == NO_NODE {
-                self.current_node = NO_NODE;
-                continue;
-            }
-
-            let item = &self.tree.items[cur_node.idx];
-
-            let dist_to_cur = self.tree.dist_fn.dist(&self.origin, item);
-
-            let go_left = dist_to_cur.saturating_sub(self.radius) <= cur_node.threshold;
-            let go_right = dist_to_cur.saturating_add(self.radius) >= cur_node.threshold;
-
-            self.current_node = if dist_to_cur <= cur_node.threshold {
-                if go_left && !already_seen {
-                    if go_right {
-                        self.push_split();
-                    }
-
-                    cur_node.left
-                } else if go_right {
-                    cur_node.right
-                } else {
-                    NO_NODE
-                }
-            } else {
-                if go_right && !already_seen {
-                    if go_left {
-                        self.push_split();
-                    }
-
-                     cur_node.right
-                } else if go_left {
-                    cur_node.left
-                } else {
-                    NO_NODE
-                }
-            };
-
-            if dist_to_cur <= self.radius && !already_seen {
-                return Some(Neighbor {
-                    item: item,
-                    dist: dist_to_cur
-                });
-            }
+impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D> where D: DistFn<T> {
+    fn new(tree: &'t VpTree<T, D>, origin: &'o T, k: usize) -> Self {
+        KnnVisitor {
+            tree: tree,
+            origin: origin,
+            heap: if k > 0 { BinaryHeap::with_capacity(k + 2) } else { BinaryHeap::new() },
+            k: k,
+            radius: ::std::u64::MAX,
+        }
+    }
+    fn visit_all(mut self) -> Self {
+        if self.k > 0 && self.tree.nodes.len() > 0 {
+            self.visit(0);
         }
 
-        None
+        self
+    }
+
+    fn visit(&mut self, node_idx: usize, ){
+        if node_idx == NO_NODE {
+            return;
+        }
+
+        let cur_node = &self.tree.nodes[node_idx];
+
+        let item = &self.tree.items[cur_node.idx];
+
+        let dist_to_cur = self.tree.dist_fn.dist(&self.origin, item);
+
+        if self.heap.len() == self.k {
+            self.heap.pop();
+        }
+
+        if dist_to_cur < self.radius {
+            self.heap.push(Neighbor {
+                item: item,
+                dist: dist_to_cur
+            });
+        }
+
+        if self.heap.len() == self.k {
+            self.radius = self.heap.peek().unwrap().dist;
+        }
+
+        let go_left = dist_to_cur.saturating_sub(self.radius) <= cur_node.threshold;
+        let go_right = dist_to_cur.saturating_add(self.radius) >= cur_node.threshold;
+
+        if dist_to_cur <= cur_node.threshold {
+            if go_left {
+                self.visit(cur_node.left);
+            }
+
+            if go_right {
+                self.visit(cur_node.right);
+            }
+        } else {
+            if go_right {
+                self.visit(cur_node.right);
+            }
+
+            if go_left {
+                self.visit(cur_node.left);
+            }
+        };
+    }
+
+    fn into_vec(self) -> Vec<Neighbor<'t, T>> {
+        self.heap.into_sorted_vec()
     }
 }
 
-impl<'t, 'o, T: 't + 'o, D: 't> Neighbors<'t, 'o, T, D>{
-    fn push_split(&mut self) {
-        self.splits.push(self.current_node);
-        let cur_node = &self.tree.nodes[self.current_node];
-
-        println!("Push split: items[{}]", cur_node.idx);
-    }
-}
-
+#[derive(Debug, Clone)]
 /// Wrapper of an item and a distance, returned by `Neighbors`.
 pub struct Neighbor<'t, T: 't> {
     /// The item that this entry concerns.
@@ -380,11 +371,20 @@ impl<'t, T: 't> PartialEq for Neighbor<'t, T> {
 /// Returns the equality of the distances only.
 impl<'t, T: 't> Eq for Neighbor<'t, T> {}
 
-pub trait VpDist<T> {
+/// Describes a type which can act as a distance-function for `T`.
+///
+/// Implemented for `Fn(&T, &T) -> u64`
+pub trait DistFn<T> {
+    /// Return the distance between `left` and `right`.
+    ///
+    /// ## Note
+    /// It is a logic error for this method to return different values for the same operands,
+    /// regardless of order (i.e. it is required to be idempotent and commutative).
     fn dist(&self, left: &T, right: &T) -> u64;
 }
 
-impl<T, F> VpDist<T> for F where F: Fn(&T, &T) -> u64 {
+/// Simply calls `(self)(left, right)`
+impl<T, F> DistFn<T> for F where F: Fn(&T, &T) -> u64 {
     fn dist(&self, left: &T, right: &T) -> u64 {
         (self)(left, right)
     }
@@ -407,21 +407,18 @@ mod test {
         VpTree::new(0i32 .. MAX_TREE_VAL, dist)
     }
 
-    //#[test]
+    #[test]
     fn test_k_nearest() {
         let tree = setup_tree();
         let nearest: Vec<_> = tree.k_nearest(&TREE_MEDIAN, NEIGHBORS.len())
-            .into_iter().map(|n| *n.item).collect();
-        assert_eq!(&*nearest, NEIGHBORS);
-    }
+            .into_iter().collect();
 
-    #[test]
-    fn test_neighbors() {
-        let tree = setup_tree();
-        println!("{:?}", tree);
-        let mut neighbors: Vec<_> = tree.neighbors(&TREE_MEDIAN, RADIUS)
-            .filter(|n| n.item != &TREE_MEDIAN).map(|n| *n.item).collect();
-        neighbors.sort();
-        assert_eq!(&*neighbors, NEIGHBORS)
+        println!("Nearest: {:?}", nearest);
+
+        assert_eq!(nearest.len(), NEIGHBORS.len());
+
+        for neighbor in nearest {
+            assert!(NEIGHBORS.contains(&neighbor.item), "Was not expecting ");
+        }
     }
 }

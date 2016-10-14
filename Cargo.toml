@@ -5,6 +5,7 @@ authors = ["Austin Bonander <austin.bonander@gmail.com>"]
 
 description = "A vantage-point tree implementation backed by vectors for performance."
 
+license = "MIT OR Apache-2.0"
+
 [dependencies]
 rand = "*"
-smallvec = "*"
