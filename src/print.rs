@@ -15,7 +15,9 @@ pub struct TreePrinter<'t, T: 't, D: 't> {
     nodes: Vec<NodeInfo<'t, T>>,
 }
 
-impl<'t, T: 't, D: 't> TreePrinter<'t, T, D> where T: fmt::Debug {
+impl<'t, T: 't, D: 't> TreePrinter<'t, T, D>
+    where T: fmt::Debug
+{
     pub fn new(tree: &'t VpTree<T, D>) -> Self {
         TreePrinter {
             tree: tree,
@@ -29,7 +31,9 @@ impl<'t, T: 't, D: 't> TreePrinter<'t, T, D> where T: fmt::Debug {
     }
 
     fn visit_node(&mut self, node_idx: usize, tree_idx: usize) {
-        if node_idx == NO_NODE { return; }
+        if node_idx == NO_NODE {
+            return;
+        }
 
         let (left, right) = {
             let node_info = get_node(&mut self.nodes, tree_idx);
@@ -51,7 +55,7 @@ impl<'t, T: 't, D: 't> TreePrinter<'t, T, D> where T: fmt::Debug {
         let mut len = 1;
 
         while start + len <= self.nodes.len() {
-            let line = &self.nodes[start .. start + len];
+            let line = &self.nodes[start..start + len];
 
             for pair in line.chunks(2) {
                 try!(f.write_str("[ "));
@@ -74,7 +78,9 @@ impl<'t, T: 't, D: 't> TreePrinter<'t, T, D> where T: fmt::Debug {
     }
 }
 
-fn get_node<'n, 't, T: 't>(nodes: &'n mut Vec<NodeInfo<'t, T>>, node_idx: usize) -> &'n mut NodeInfo<'t, T> {
+fn get_node<'n, 't, T: 't>(nodes: &'n mut Vec<NodeInfo<'t, T>>,
+                           node_idx: usize)
+                           -> &'n mut NodeInfo<'t, T> {
     if node_idx >= nodes.len() {
         let new_size = (node_idx + 1).next_power_of_two();
 
@@ -104,7 +110,7 @@ impl<'t, T: 't> Default for NodeInfo<'t, T> {
     fn default() -> Self {
         NodeInfo {
             item: None,
-            threshold: 0
+            threshold: 0,
         }
     }
 }

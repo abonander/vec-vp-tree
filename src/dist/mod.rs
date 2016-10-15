@@ -4,7 +4,7 @@
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
-//! Distance-function trait and helper types for `VpTree`.
+// Distance-function trait and helper types for `VpTree`.
 
 pub mod num;
 
@@ -26,7 +26,9 @@ pub trait DistFn<T> {
 }
 
 /// Simply calls `(self)(left, right)`
-impl<T, F> DistFn<T> for F where F: Fn(&T, &T) -> u64 {
+impl<T, F> DistFn<T> for F
+    where F: Fn(&T, &T) -> u64
+{
     fn dist(&self, left: &T, right: &T) -> u64 {
         (self)(left, right)
     }

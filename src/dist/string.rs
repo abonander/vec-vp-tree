@@ -4,7 +4,7 @@
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
-//! Distance functions for strings (`strsim` feature, enabled by default)
+// Distance functions for strings (`strsim` feature, enabled by default)
 
 use strsim;
 
@@ -75,13 +75,17 @@ impl_dist_fn! {
 impl<'a> KnownDist for &'a str {
     /// The fastest distance function for strings.
     type DistFn = Hamming;
-    fn dist_fn() -> Hamming { Hamming }
+    fn dist_fn() -> Hamming {
+        Hamming
+    }
 }
 
 impl KnownDist for String {
     /// The fastest distance function for strings.
     type DistFn = Hamming;
-    fn dist_fn() -> Hamming { Hamming }
+    fn dist_fn() -> Hamming {
+        Hamming
+    }
 }
 
 fn hamming_dist(left: &str, right: &str) -> u64 {
@@ -98,4 +102,3 @@ fn jaro_factor(left: &str, right: &str) -> u64 {
 fn jaro_winkler_factor(left: &str, right: &str) -> u64 {
     strsim::jaro_winkler(left, right).mul_add(JARO_SCALE_FACTOR, -JARO_SCALE_FACTOR).round() as u64
 }
-

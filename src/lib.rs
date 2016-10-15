@@ -8,9 +8,9 @@
 // Implementation adapted from C++ code at http://stevehanov.ca/blog/index.php?id=130
 // (accessed October 14, 2016). No copyright or license information is provided,
 // so the original code is assumed to be public domain.
-//! An implementation of a [vantage-point tree][vp-tree] backed by a vector.
-//!
-//! [vp-tree]: https://en.wikipedia.org/wiki/Vantage-point_tree
+// An implementation of a [vantage-point tree][vp-tree] backed by a vector.
+//
+// [vp-tree]: https://en.wikipedia.org/wiki/Vantage-point_tree
 #![warn(missing_docs)]
 
 extern crate rand;
@@ -42,7 +42,9 @@ pub struct VpTree<T, D> {
     dist_fn: D,
 }
 
-impl<T> VpTree<T, < T as KnownDist >::DistFn> where T: KnownDist {
+impl<T> VpTree<T, <T as KnownDist>::DistFn>
+    where T: KnownDist
+{
     /// Collect the results of `items` into the tree, and build the tree using the known distance
     /// function for `T`.
     ///
@@ -103,7 +105,9 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
 
     /// Rebuild the tree in [start, end)
     fn rebuild_in(&mut self, parent_idx: usize, start: usize, end: usize) -> usize {
-        if start == end { return NO_NODE; }
+        if start == end {
+            return NO_NODE;
+        }
 
         if start + 1 == end {
             return self.push_node(start, parent_idx, 0);
@@ -121,10 +125,9 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
             let dist_fn = &self.dist_fn;
 
             // This function will partition around the median element
-            let median_thresh_item = select::qselect_inplace_by(
-                items, median_idx,
-                |left, right| dist_fn.dist(pivot, left).cmp(&dist_fn.dist(pivot, right))
-            );
+            let median_thresh_item = select::qselect_inplace_by(items, median_idx, |left, right| {
+                dist_fn.dist(pivot, left).cmp(&dist_fn.dist(pivot, right))
+            });
 
             dist_fn.dist(pivot, median_thresh_item)
         };
@@ -161,9 +164,12 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
 
     #[inline(always)]
     fn sanity_check(&self) {
-        assert!(self.nodes.len() == self.items.len(), "Attempting to traverse `VpTree` when it is
-        in an invalid state. This can happen if a panic was thrown while it was being mutated and
-        then caught outside.")
+        assert!(self.nodes.len() == self.items.len(),
+                "Attempting to traverse `VpTree` when it is
+        in an invalid state. This can \
+                 happen if a panic was thrown while it was being mutated and
+        then caught \
+                 outside.")
     }
 
     /// Add `new_items` to the tree and rebuild it.
@@ -192,7 +198,9 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
     /// keeping them otherwise.
     ///
     /// The tree will be rebuilt afterwards.
-    pub fn retain<F>(&mut self, ret_fn: F) where F: FnMut(&T) -> bool {
+    pub fn retain<F>(&mut self, ret_fn: F)
+        where F: FnMut(&T) -> bool
+    {
         self.nodes.clear();
         self.items.retain(ret_fn);
         self.rebuild();
@@ -223,7 +231,9 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
     /// ## Note
     /// If a panic is initiated in `mut_fn` and then caught outside this method,
     /// the tree will need to be manually rebuilt with `.rebuild()`.
-    pub fn with_mut_items<F>(&mut self, mut_fn: F) where F: FnOnce(&mut [T]) {
+    pub fn with_mut_items<F>(&mut self, mut_fn: F)
+        where F: FnOnce(&mut [T])
+    {
         self.nodes.clear();
         mut_fn(&mut self.items);
         self.rebuild();
@@ -265,7 +275,9 @@ impl<T: fmt::Debug, D: DistFn<T>> fmt::Debug for VpTree<T, D> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         try!(writeln!(f, "VpTree {{ len: {} }}", self.items.len()));
 
-        if self.nodes.len() == 0 { return f.write_str("[Empty]\n"); }
+        if self.nodes.len() == 0 {
+            return f.write_str("[Empty]\n");
+        }
 
         try!(writeln!(f, "Items: {:?}", self.items));
 
@@ -299,12 +311,18 @@ struct KnnVisitor<'t, 'o, T: 't + 'o, D: 't> {
     radius: u64,
 }
 
-impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D> where D: DistFn<T> {
+impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D>
+    where D: DistFn<T>
+{
     fn new(tree: &'t VpTree<T, D>, origin: &'o T, k: usize) -> Self {
         KnnVisitor {
             tree: tree,
             origin: origin,
-            heap: if k > 0 { BinaryHeap::with_capacity(k + 2) } else { BinaryHeap::new() },
+            heap: if k > 0 {
+                BinaryHeap::with_capacity(k + 2)
+            } else {
+                BinaryHeap::new()
+            },
             k: k,
             radius: ::std::u64::MAX,
         }
@@ -317,7 +335,7 @@ impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D> where D: DistFn<T> {
         self
     }
 
-    fn visit(&mut self, node_idx: usize, ) {
+    fn visit(&mut self, node_idx: usize) {
         if node_idx == NO_NODE {
             return;
         }
@@ -335,7 +353,7 @@ impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D> where D: DistFn<T> {
 
             self.heap.push(Neighbor {
                 item: item,
-                dist: dist_to_cur
+                dist: dist_to_cur,
             });
 
             if self.heap.len() == self.k {
@@ -418,12 +436,15 @@ mod test {
         println!("Tree: {:?}", tree);
 
         let nearest: Vec<_> = tree.k_nearest(&ORIGIN, NEIGHBORS.len())
-            .into_iter().collect();
+            .into_iter()
+            .collect();
 
         println!("Nearest: {:?}", nearest);
 
         for neighbor in nearest {
-            assert!(NEIGHBORS.contains(&neighbor.item), "Was not expecting {:?}", neighbor);
+            assert!(NEIGHBORS.contains(&neighbor.item),
+                    "Was not expecting {:?}",
+                    neighbor);
         }
     }
 }

@@ -12,15 +12,21 @@ const SORT_THRESH: usize = 6;
 
 /// Use the Quickselect algorithm, given an ordering function,
 /// to select the `k`th smallest element from `data`. As part of the
-/// algorithm, `k` is moved to its final sorted position and the rest of the array is (at least) partially
-/// sorted.
+/// algorithm, `k` is moved to its final sorted position and the rest of the array is (at least)
+/// partially sorted.
 ///
 /// ##Panics
 /// If `k` is greater than `data.len()`.
-pub fn qselect_inplace_by<T, F: FnMut(&T, &T) -> Ordering>(data: &mut [T], k: usize, mut ord_fn: F) -> &mut T {
+pub fn qselect_inplace_by<T, F: FnMut(&T, &T) -> Ordering>(data: &mut [T],
+                                                           k: usize,
+                                                           mut ord_fn: F)
+                                                           -> &mut T {
     let len = data.len();
 
-    assert!(k < len, "Called qselect_inplace with k = {} and data length: {}", k, len);
+    assert!(k < len,
+            "Called qselect_inplace with k = {} and data length: {}",
+            k,
+            len);
 
     if len < SORT_THRESH {
         data.sort_by(&mut ord_fn);
@@ -39,7 +45,8 @@ pub fn qselect_inplace_by<T, F: FnMut(&T, &T) -> Ordering>(data: &mut [T], k: us
 }
 
 fn partition_around<T, F>(data: &mut [T], pivot_idx: usize, mut ord_fn: F) -> usize
-    where F: FnMut(&T, &T) -> Ordering {
+    where F: FnMut(&T, &T) -> Ordering
+{
 
     let len = data.len();
 
@@ -59,7 +66,8 @@ fn partition_around<T, F>(data: &mut [T], pivot_idx: usize, mut ord_fn: F) -> us
     curr
 }
 
-/// Given an ordering function, pick an arbitrary pivot and partition the slice, returning the pivot.
+/// Given an ordering function, pick an arbitrary pivot and partition the slice,
+/// returning the pivot.
 fn partition_by<T, F: FnMut(&T, &T) -> Ordering>(data: &mut [T], mut ord_fn: F) -> usize {
     let len = data.len();
 
@@ -75,7 +83,11 @@ fn partition_by<T, F: FnMut(&T, &T) -> Ordering>(data: &mut [T], mut ord_fn: F) 
 }
 
 /// Given an ordering function, of the three values passed, return the median.
-pub fn median_of_3_by<T, F: FnMut(&T, &T) -> Ordering>(mut x: T, mut y: T, mut z: T, mut ord_fn: F) -> T {
+pub fn median_of_3_by<T, F: FnMut(&T, &T) -> Ordering>(mut x: T,
+                                                       mut y: T,
+                                                       mut z: T,
+                                                       mut ord_fn: F)
+                                                       -> T {
     in_order_by(&mut x, &mut y, &mut ord_fn);
     in_order_by(&mut x, &mut z, &mut ord_fn);
     in_order_by(&mut y, &mut z, &mut ord_fn);
