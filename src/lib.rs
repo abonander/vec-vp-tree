@@ -17,17 +17,19 @@ extern crate rand;
 
 use rand::Rng;
 
-
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::{cmp, fmt, iter, mem};
+use std::fmt;
+
+use dist::{DistFn, KnownDist};
+
+pub mod dist;
 
 mod select;
 
 mod print;
 
-const NO_NODE: usize = ::std::usize::MAX;
 
 /// An implementation of a vantage-point tree backed by a vector.
 ///
@@ -38,32 +40,55 @@ pub struct VpTree<T, D> {
     dist_fn: D,
 }
 
-impl<T, D: DistFn<T>> VpTree<T, D> {
-    /// Collect the results of `items` into the tree, and build the tree using `dist_fn`.
+impl<T> VpTree<T, <T as KnownDist>::DistFn> where T: KnownDist {
+    /// Collect the results of `items` into the tree, and build the tree using the known distance
+    /// function for `T`.
     ///
-    /// If coming straight from a vector, use `from_vec` to avoid a copy.
-    pub fn new<I: IntoIterator<Item = T>>(items: I, dist_fn: D) -> Self {
-        Self::from_vec(items.into_iter().collect(), dist_fn)
+    /// If `items` is `Vec<T>`, use `from_vec` to avoid a copy.
+    ///
+    /// If you want to provide a custom distance function, use `new_with_dist()` instead.
+    pub fn new<I: IntoIterator<Item = T>>(items: I) -> Self {
+        Self::new_with_dist(items, <T as KnownDist>::dist_fn())
     }
 
-    pub fn from_vec(items: Vec<T>, dist_fn: D) -> Self {
+    /// Build the tree directly from `items` using the known distance function for `T`.
+    ///
+    /// If you want to provide a custom distance function, use `from_vec_with_dist()` instead.
+    pub fn from_vec(items: Vec<T>) -> Self {
+        Self::from_vec_with_dist(items, <T as KnownDist>::dist_fn())
+    }
+}
+
+impl<T, D: DistFn<T>> VpTree<T, D> {
+    /// Collect the results of `items` into the tree, and build the tree using the given distance
+    /// function `dist_fn`.
+    ///
+    /// If `items` is `Vec<T>`, use `from_vec_with_dist` to avoid a copy.
+    pub fn new_with_dist<I: IntoIterator<Item = T>>(items: I, dist_fn: D) -> Self {
+        Self::from_vec_with_dist(items.into_iter().collect(), dist_fn)
+    }
+
+    /// Build the tree directly from `items` using the given distance function `dist_fn`.
+    pub fn from_vec_with_dist(items: Vec<T>, dist_fn: D) -> Self {
         let mut self_ = VpTree {
             nodes: Vec::with_capacity(items.len()),
             items: items,
             dist_fn: dist_fn,
         };
 
-        self_.full_rebuild();
+        self_.rebuild();
 
         self_
     }
+
+
 
     /// Rebuild the full tree.
     ///
     /// This is only necessary if the one or more properties of a contained
     /// item which determine their distance via `D: VpDist<T>` was somehow changed without
     /// the tree being rebuilt, or a panic occurred during a mutation and was caught.
-    pub fn full_rebuild(&mut self) {
+    pub fn rebuild(&mut self) {
         self.nodes.clear();
 
         let len = self.items.len();
@@ -73,11 +98,11 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
             self.nodes.reserve(len - nodes_cap);
         }
 
-        self.rebuild(NO_NODE, 0, len);
+        self.rebuild_in(NO_NODE, 0, len);
     }
 
     /// Rebuild the tree in [start, end)
-    fn rebuild(&mut self, parent_idx: usize, start: usize, end: usize) -> usize {
+    fn rebuild_in(&mut self, parent_idx: usize, start: usize, end: usize) -> usize {
         if start == end { return NO_NODE; }
 
         if start + 1 == end {
@@ -110,9 +135,9 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
 
         let self_idx = self.push_node(start, parent_idx, threshold);
 
-        let left_idx = self.rebuild(self_idx, left_start, split_idx);
+        let left_idx = self.rebuild_in(self_idx, left_start, split_idx);
 
-        let right_idx = self.rebuild(self_idx, split_idx, end);
+        let right_idx = self.rebuild_in(self_idx, split_idx, end);
 
         self.nodes[self_idx].left = left_idx;
         self.nodes[self_idx].right = right_idx;
@@ -145,7 +170,7 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
     pub fn extend<I: IntoIterator<Item = T>>(&mut self, new_items: I) {
         self.nodes.clear();
         self.items.extend(new_items);
-        self.full_rebuild();
+        self.rebuild();
     }
 
     /// Apply a new distance function and rebuild the tree, returning the transformed type.
@@ -158,7 +183,7 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
             dist_fn: dist_fn,
         };
 
-        self_.full_rebuild();
+        self_.rebuild();
 
         self_
     }
@@ -170,10 +195,12 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
     pub fn retain<F>(&mut self, ret_fn: F) where F: FnMut(&T) -> bool {
         self.nodes.clear();
         self.items.retain(ret_fn);
-        self.full_rebuild();
+        self.rebuild();
     }
 
-    /// Get a slice of the items.
+    /// Get a slice of the items in the tree.
+    ///
+    /// These items may have been rearranged from the order which they were inserted.
     ///
     /// ## Note
     /// It is a logic error for an item to be modified in such a way that the item's distance
@@ -181,7 +208,8 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
     /// without the tree being rebuilt.
     /// This is normally only possible through Cell, RefCell, global state, I/O, or unsafe code.
     ///
-    /// If you wish to mutate one or more of the contained items, use `.with_mut_items()` instead.
+    /// If you wish to mutate one or more of the contained items, use `.with_mut_items()` instead,
+    /// to ensure the tree is rebuilt after the mutation.
     pub fn items(&self) -> &[T] {
         &self.items
     }
@@ -194,11 +222,11 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
     ///
     /// ## Note
     /// If a panic is initiated in `mut_fn` and then caught outside this method,
-    /// the tree will need to be manually rebuilt with `.full_rebuild()`.
+    /// the tree will need to be manually rebuilt with `.rebuild()`.
     pub fn with_mut_items<F>(&mut self, mut_fn: F) where F: FnOnce(&mut [T]) {
         self.nodes.clear();
         mut_fn(&mut self.items);
-        self.full_rebuild();
+        self.rebuild();
     }
 
     /// Get a vector of the `k` nearest neighbors to `origin`, sorted in ascending order
@@ -210,8 +238,9 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
     /// filter out duplicate entries.
     ///
     /// ## Panics
-    /// If the tree was in an invalid state
-    pub fn k_nearest<'t, O: Borrow<T>>(&'t self, origin: O, mut k: usize) -> Vec<Neighbor<'t, T>> {
+    /// If the tree was in an invalid state. This can happen if a panic occurred during
+    /// a mutation and was then caught, then this method was called before calling `.rebuild()`.
+    pub fn k_nearest<'t, O: Borrow<T>>(&'t self, origin: O, k: usize) -> Vec<Neighbor<'t, T>> {
         self.sanity_check();
 
         let origin = origin.borrow();
@@ -219,14 +248,6 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
         KnnVisitor::new(self, origin, k)
             .visit_all()
             .into_vec()
-    }
-
-    fn root(&self) -> usize {
-        if self.nodes.len() > 0 {
-            0
-        } else {
-            NO_NODE
-        }
     }
 
     /// Consume `self` and return the vector of items.
@@ -237,17 +258,27 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
     }
 }
 
+/// Prints the contained items as well as the tree structure.
 impl<T: fmt::Debug, D: DistFn<T>> fmt::Debug for VpTree<T, D> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         try!(writeln!(f, "VpTree {{ len: {} }}", self.items.len()));
 
         if self.nodes.len() == 0 { return f.write_str("[Empty]\n");}
 
-        try!(writeln!(f, "Items: {:?}\nStructure:", self.items));
+        try!(writeln!(f, "Items: {:?}", self.items));
 
-        print::TreePrinter::new(self).print(f)
+
+        if self.nodes.len() == self.items.len() {
+            try!(f.write_str("Structure:\n"));
+            print::TreePrinter::new(self).print(f)
+        } else {
+            f.write_str("[Tree is in invalid state]")
+        }
     }
 }
+
+/// Signifier for `Node` that there is no parent or child node for a given field.
+const NO_NODE: usize = ::std::usize::MAX;
 
 #[derive(Debug)]
 struct Node {
@@ -342,8 +373,7 @@ impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D> where D: DistFn<T> {
 pub struct Neighbor<'t, T: 't> {
     /// The item that this entry concerns.
     pub item: &'t T,
-    /// The distance between `item` and the origin passed to `VpTree::neighbors()` or
-    /// `VpTree::k_nearest()`.
+    /// The distance between `item` and the origin passed to `VpTree::k_nearest()`.
     pub dist: u64,
 }
 
@@ -371,25 +401,6 @@ impl<'t, T: 't> PartialEq for Neighbor<'t, T> {
 /// Returns the equality of the distances only.
 impl<'t, T: 't> Eq for Neighbor<'t, T> {}
 
-/// Describes a type which can act as a distance-function for `T`.
-///
-/// Implemented for `Fn(&T, &T) -> u64`
-pub trait DistFn<T> {
-    /// Return the distance between `left` and `right`.
-    ///
-    /// ## Note
-    /// It is a logic error for this method to return different values for the same operands,
-    /// regardless of order (i.e. it is required to be idempotent and commutative).
-    fn dist(&self, left: &T, right: &T) -> u64;
-}
-
-/// Simply calls `(self)(left, right)`
-impl<T, F> DistFn<T> for F where F: Fn(&T, &T) -> u64 {
-    fn dist(&self, left: &T, right: &T) -> u64 {
-        (self)(left, right)
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::VpTree;
@@ -398,17 +409,9 @@ mod test {
     const ORIGIN: i32 = 4;
     const NEIGHBORS: &'static [i32] = &[2, 3, 4, 5, 6];
 
-    fn setup_tree() -> VpTree<i32, fn(&i32, &i32) -> u64> {
-        fn dist(left: &i32, right: &i32) -> u64 {
-            (left - right).abs() as u64
-        }
-
-        VpTree::new(0i32 .. MAX_TREE_VAL, dist)
-    }
-
     #[test]
     fn test_k_nearest() {
-        let tree = setup_tree();
+        let tree = VpTree::new(0i32 .. MAX_TREE_VAL);
 
         println!("Tree: {:?}", tree);
 
