@@ -15,6 +15,9 @@
 
 extern crate rand;
 
+#[cfg(feature = "strsim")]
+extern crate strsim;
+
 use rand::Rng;
 
 use std::borrow::Borrow;
@@ -81,12 +84,10 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
         self_
     }
 
-
-
     /// Rebuild the full tree.
     ///
     /// This is only necessary if the one or more properties of a contained
-    /// item which determine their distance via `D: VpDist<T>` was somehow changed without
+    /// item which determine their distance via `D: DistFn<T>` was somehow changed without
     /// the tree being rebuilt, or a panic occurred during a mutation and was caught.
     pub fn rebuild(&mut self) {
         self.nodes.clear();
@@ -234,8 +235,10 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
     ///
     /// ## Note
     /// If `origin` is contained within the tree, which is allowed by the API contract,
-    /// it will be returned. In this case, it may be preferable to start with a higher `k` and
-    /// filter out duplicate entries.
+    /// it will be returned in the results. In this case, it may be preferable to start with a
+    /// higher `k` and filter out duplicate entries.
+    ///
+    /// If `k > self.items.len()`, then obviously only `self.items.len()` items will be returned.
     ///
     /// ## Panics
     /// If the tree was in an invalid state. This can happen if a panic occurred during
@@ -252,13 +255,13 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
 
     /// Consume `self` and return the vector of items.
     ///
-    /// These items may have been rearranged from the order which they were inserted.
+    /// The items may have been rearranged from the order in which they were inserted.
     pub fn into_vec(self) -> Vec<T> {
         self.items
     }
 }
 
-/// Prints the contained items as well as the tree structure.
+/// Prints the contained items as well as the tree structure, if it is in a valid state.
 impl<T: fmt::Debug, D: DistFn<T>> fmt::Debug for VpTree<T, D> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         try!(writeln!(f, "VpTree {{ len: {} }}", self.items.len()));

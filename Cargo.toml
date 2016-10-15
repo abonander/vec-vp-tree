@@ -9,3 +9,10 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 rand = "*"
+
+[dependencies.strsim]
+version = "*"
+optional = true
+
+[features]
+default = ["strsim"]
