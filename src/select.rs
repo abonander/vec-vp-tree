@@ -15,8 +15,6 @@ const SORT_THRESH: usize = 6;
 /// algorithm, `k` is moved to its final sorted position and the rest of the array is (at least) partially
 /// sorted.
 ///
-/// For a version that uses extra space but does not reorder the slice, use `qselect_by`.
-///
 /// ##Panics
 /// If `k` is greater than `data.len()`.
 pub fn qselect_inplace_by<T, F: FnMut(&T, &T) -> Ordering>(data: &mut [T], k: usize, mut ord_fn: F) -> &mut T {
