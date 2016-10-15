@@ -33,7 +33,6 @@ mod select;
 
 mod print;
 
-
 /// An implementation of a vantage-point tree backed by a vector.
 ///
 /// Only bulk insert/removals are provided in order to keep the tree balanced.
@@ -43,7 +42,7 @@ pub struct VpTree<T, D> {
     dist_fn: D,
 }
 
-impl<T> VpTree<T, <T as KnownDist>::DistFn> where T: KnownDist {
+impl<T> VpTree<T, < T as KnownDist >::DistFn> where T: KnownDist {
     /// Collect the results of `items` into the tree, and build the tree using the known distance
     /// function for `T`.
     ///
@@ -266,7 +265,7 @@ impl<T: fmt::Debug, D: DistFn<T>> fmt::Debug for VpTree<T, D> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         try!(writeln!(f, "VpTree {{ len: {} }}", self.items.len()));
 
-        if self.nodes.len() == 0 { return f.write_str("[Empty]\n");}
+        if self.nodes.len() == 0 { return f.write_str("[Empty]\n"); }
 
         try!(writeln!(f, "Items: {:?}", self.items));
 
@@ -318,7 +317,7 @@ impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D> where D: DistFn<T> {
         self
     }
 
-    fn visit(&mut self, node_idx: usize, ){
+    fn visit(&mut self, node_idx: usize, ) {
         if node_idx == NO_NODE {
             return;
         }
@@ -414,7 +413,7 @@ mod test {
 
     #[test]
     fn test_k_nearest() {
-        let tree = VpTree::new(0i32 .. MAX_TREE_VAL);
+        let tree = VpTree::new(0i32..MAX_TREE_VAL);
 
         println!("Tree: {:?}", tree);
 
