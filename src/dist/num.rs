@@ -11,6 +11,7 @@ use super::{DistFn, KnownDist};
 /// Distance function for signed integers.
 ///
 /// Returns `(left - right).abs() as u64`
+#[derive(Copy, Clone)]
 pub struct SignedDist;
 
 macro_rules! impl_signed_dist {
@@ -37,6 +38,7 @@ impl_signed_dist! { i8, i16, i32, i64, isize }
 /// Distance function for unsigned integers.
 ///
 /// Returns ` if left < right { left - right } else { right - left } as u64`
+#[derive(Copy, Clone)]
 pub struct UnsignedDist;
 
 macro_rules! impl_unsigned_dist {
@@ -64,11 +66,13 @@ impl_unsigned_dist! { u8, u16, u32, u64, usize }
 /// Implements `DistFn` for floating-point numbers.
 ///
 /// Returns `(left - right).abs().round() as u64`.
+#[derive(Copy, Clone)]
 pub struct FloatDist;
 
 /// Implements `DistFn` for floating-point numbers with a scaling factor.
 ///
 /// Returns `((left - right) * self.0).abs().round() as u64`
+#[derive(Copy, Clone)]
 pub struct ScaledFloatDist<T>(pub T);
 
 macro_rules! impl_float_dist {

@@ -36,6 +36,7 @@ mod print;
 /// An implementation of a vantage-point tree backed by a vector.
 ///
 /// Only bulk insert/removals are provided in order to keep the tree balanced.
+#[derive(Clone)]
 pub struct VpTree<T, D> {
     nodes: Vec<Node>,
     items: Vec<T>,
@@ -77,6 +78,19 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
         let mut self_ = VpTree {
             nodes: Vec::with_capacity(items.len()),
             items: items,
+            dist_fn: dist_fn,
+        };
+
+        self_.rebuild();
+
+        self_
+    }
+
+    /// Apply a new distance function and rebuild the tree, returning the transformed type.
+    pub fn dist_fn<D_: DistFn<T>>(self, dist_fn: D_) -> VpTree<T, D_> {
+        let mut self_ = VpTree {
+            nodes: self.nodes,
+            items: self.items,
             dist_fn: dist_fn,
         };
 
@@ -179,21 +193,6 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
         self.rebuild();
     }
 
-    /// Apply a new distance function and rebuild the tree, returning the transformed type.
-    ///
-    /// The tree will be rebuilt before it is returned.
-    pub fn dist_fn<D_: DistFn<T>>(self, dist_fn: D_) -> VpTree<T, D_> {
-        let mut self_ = VpTree {
-            nodes: self.nodes,
-            items: self.items,
-            dist_fn: dist_fn,
-        };
-
-        self_.rebuild();
-
-        self_
-    }
-
     /// Iterate over the contained items, dropping them if `ret_fn` returns `false`,
     /// keeping them otherwise.
     ///
@@ -212,9 +211,9 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
     ///
     /// ## Note
     /// It is a logic error for an item to be modified in such a way that the item's distance
-    /// to any other item, as determined by `D: VpDist<T>`, changes while it is in the tree
+    /// to any other item, as determined by `D: DistFn<T>`, changes while it is in the tree
     /// without the tree being rebuilt.
-    /// This is normally only possible through Cell, RefCell, global state, I/O, or unsafe code.
+    /// This is normally only possible through `Cell`, `RefCell`, global state, I/O, or unsafe code.
     ///
     /// If you wish to mutate one or more of the contained items, use `.with_mut_items()` instead,
     /// to ensure the tree is rebuilt after the mutation.
@@ -226,7 +225,7 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
     ///
     /// The tree will be rebuilt after `mut_fn` returns, in assumption that it will modify one or
     /// more of the contained items such that their distance to others,
-    /// as determined by `D: VpDist<T>`, changes.
+    /// as determined by `D: DistFn<T>`, changes.
     ///
     /// ## Note
     /// If a panic is initiated in `mut_fn` and then caught outside this method,
@@ -251,7 +250,7 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
     ///
     /// ## Panics
     /// If the tree was in an invalid state. This can happen if a panic occurred during
-    /// a mutation and was then caught, then this method was called before calling `.rebuild()`.
+    /// a mutation and was then caught without calling `.rebuild()`.
     pub fn k_nearest<'t, O: Borrow<T>>(&'t self, origin: O, k: usize) -> Vec<Neighbor<'t, T>> {
         self.sanity_check();
 
@@ -294,7 +293,7 @@ impl<T: fmt::Debug, D: DistFn<T>> fmt::Debug for VpTree<T, D> {
 /// Signifier for `Node` that there is no parent or child node for a given field.
 const NO_NODE: usize = ::std::usize::MAX;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Node {
     idx: usize,
     parent: usize,
@@ -388,8 +387,8 @@ impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D>
     }
 }
 
-#[derive(Debug, Clone)]
 /// Wrapper of an item and a distance, returned by `Neighbors`.
+#[derive(Debug, Clone)]
 pub struct Neighbor<'t, T: 't> {
     /// The item that this entry concerns.
     pub item: &'t T,

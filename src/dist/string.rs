@@ -19,24 +19,28 @@ const JARO_SCALE_FACTOR: f64 = 100.;
 /// Returns the number of characters that are different between the two strings.
 ///
 /// If the strings are not the same length, adds the length difference as well.
+#[derive(Copy, Clone)]
 pub struct Hamming;
 
 /// Levenshtein distance (edit-distance) function for strings.
 ///
 /// Returns the the minimum number of insertions, deletions, and substitutions required to change
 /// one string into the other.
+#[derive(Copy, Clone)]
 pub struct Levenshtein;
 
 /// Damerau-Levenshtein distance function for strings.
 ///
 /// Returns the the minimum number of insertions, deletions, and substitutions required to change
 /// one string into the other, also counts swaps of adjacent characters.
+#[derive(Copy, Clone)]
 pub struct DamerauLevenshtein;
 
 /// Distance function for strings using the Jaro similarity factor.
 ///
 /// Returns a number in `[0, 100]`, inversely proportional to the similarity between
 /// the two strings, where 0 is exactly the same, and 100 is not at all similar.
+#[derive(Copy, Clone)]
 pub struct Jaro;
 
 /// Distance function for strings using the Jaro similarity factor,
@@ -44,6 +48,7 @@ pub struct Jaro;
 ///
 /// Returns a number in `[0, 100]`, inversely proportional to the similarity between
 /// the two strings, where 0 is exactly the same, and 100 is not at all similar.
+#[derive(Copy, Clone)]
 pub struct JaroWinkler;
 
 macro_rules! impl_dist_fn {
