@@ -317,6 +317,7 @@ impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D>
         KnnVisitor {
             tree: tree,
             origin: origin,
+            // Preallocate enough scratch space but don't allocate if `k = 0`
             heap: if k > 0 {
                 BinaryHeap::with_capacity(k + 2)
             } else {
@@ -360,6 +361,10 @@ impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D>
             }
         }
 
+        // Original implementation used `double`, which could go negative and so didn't
+        // worry about wrapping.
+        // Unsigned integer distances make more sense for most use cases and are faster
+        // to work with, but require care, especially when `self.radius` is near or at max value.
         let go_left = dist_to_cur.saturating_sub(self.radius) <= cur_node.threshold;
         let go_right = dist_to_cur.saturating_add(self.radius) >= cur_node.threshold;
 
