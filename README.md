@@ -12,7 +12,7 @@ Multiple distance functions are provided by default, including Hamming and Leven
 [vp-tree]: https://en.wikipedia.org/wiki/Vantage-point_tree
 [knn]: https://en.wikipedia.org/wiki/K-nearest_neighbors_algorithm
 
-###[Documentation](http://docs.rs/multipart/)
+###[Documentation](http://docs.rs/vec-vp-tree/)
 
 License
 -------
