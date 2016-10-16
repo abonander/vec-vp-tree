@@ -17,10 +17,9 @@ const SORT_THRESH: usize = 6;
 ///
 /// ##Panics
 /// If `k` is greater than `data.len()`.
-pub fn qselect_inplace_by<T, F: FnMut(&T, &T) -> Ordering>(data: &mut [T],
-                                                           k: usize,
-                                                           mut ord_fn: F)
-                                                           -> &mut T {
+pub fn qselect_inplace_by<T, F>(data: &mut [T], k: usize, mut ord_fn: F) -> &mut T
+where F: FnMut(&T, &T) -> Ordering {
+
     let len = data.len();
 
     assert!(k < len,
@@ -83,7 +82,7 @@ fn partition_by<T, F: FnMut(&T, &T) -> Ordering>(data: &mut [T], mut ord_fn: F) 
 }
 
 /// Given an ordering function, of the three values passed, return the median.
-pub fn median_of_3_by<T, F: FnMut(&T, &T) -> Ordering>(mut x: T,
+fn median_of_3_by<T, F: FnMut(&T, &T) -> Ordering>(mut x: T,
                                                        mut y: T,
                                                        mut z: T,
                                                        mut ord_fn: F)
@@ -97,7 +96,7 @@ pub fn median_of_3_by<T, F: FnMut(&T, &T) -> Ordering>(mut x: T,
 
 /// Given an ordering function, if `x > y`, swap `x` and `y`.
 #[inline]
-pub fn in_order_by<T, F: FnMut(&T, &T) -> Ordering>(x: &mut T, y: &mut T, mut ord_fn: F) {
+fn in_order_by<T, F: FnMut(&T, &T) -> Ordering>(x: &mut T, y: &mut T, mut ord_fn: F) {
     if ord_fn(x, y) == Ordering::Greater {
         mem::swap(x, y);
     }
