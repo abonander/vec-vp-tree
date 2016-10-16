@@ -3,7 +3,7 @@ name = "vec-vp-tree"
 version = "0.1.0"
 authors = ["Austin Bonander <austin.bonander@gmail.com>"]
 
-description = "A vantage-point tree implementation backed by vectors for performance."
+description = "A vantage-point tree implementation backed by vectors for good performance with no unsafe code."
 repository = "https://github.com/abonander/vec-vp-tree"
 keywords = ["vantage", "point", "tree", "nearest", "neighbor"]
 
