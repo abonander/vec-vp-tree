@@ -347,14 +347,17 @@ impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D>
         let dist_to_cur = self.tree.dist_fn.dist(&self.origin, item);
 
         if dist_to_cur < self.radius {
-            if self.heap.len() == self.k {
-                self.heap.pop();
-            }
-
-            self.heap.push(Neighbor {
+            let neighbor = Neighbor {
                 item: item,
                 dist: dist_to_cur,
-            });
+            };
+
+            if self.heap.len() == self.k {
+                // Equivalent to .push_pop(), k is assured to be > 0
+                *self.heap.peek_mut().unwrap() = neighbor;
+            } else {
+                self.heap.push(neighbor);
+            }
 
             if self.heap.len() == self.k {
                 self.radius = self.heap.peek().unwrap().dist;
