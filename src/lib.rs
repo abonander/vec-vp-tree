@@ -8,9 +8,10 @@
 // Implementation adapted from C++ code at http://stevehanov.ca/blog/index.php?id=130
 // (accessed October 14, 2016). No copyright or license information is provided,
 // so the original code is assumed to be public domain.
-// An implementation of a [vantage-point tree][vp-tree] backed by a vector.
-//
-// [vp-tree]: https://en.wikipedia.org/wiki/Vantage-point_tree
+
+//! An implementation of a [vantage-point tree][vp-tree] backed by a vector.
+//!
+//! [vp-tree]: https://en.wikipedia.org/wiki/Vantage-point_tree
 #![warn(missing_docs)]
 
 extern crate rand;
