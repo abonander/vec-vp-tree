@@ -14,6 +14,8 @@
 //! [vp-tree]: https://en.wikipedia.org/wiki/Vantage-point_tree
 #![warn(missing_docs)]
 
+extern crate order_stat;
+
 extern crate rand;
 
 #[cfg(feature = "strsim")]
@@ -29,8 +31,6 @@ use std::fmt;
 use dist::{DistFn, KnownDist};
 
 pub mod dist;
-
-mod select;
 
 mod print;
 
@@ -140,7 +140,7 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
             let dist_fn = &self.dist_fn;
 
             // This function will partition around the median element
-            let median_thresh_item = select::qselect_inplace_by(items, median_idx, |left, right| {
+            let median_thresh_item = order_stat::kth_by(items, median_idx, |left, right| {
                 dist_fn.dist(pivot, left).cmp(&dist_fn.dist(pivot, right))
             });
 
@@ -180,10 +180,8 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
     #[inline(always)]
     fn sanity_check(&self) {
         assert!(self.nodes.len() == self.items.len(),
-                "Attempting to traverse `VpTree` when it is
-        in an invalid state. This can \
-                 happen if a panic was thrown while it was being mutated and
-        then caught \
+                "Attempting to traverse `VpTree` when it is in an invalid state. This can \
+                 happen if a panic was thrown while it was being mutated and then caught \
                  outside.")
     }
 

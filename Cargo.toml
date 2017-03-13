@@ -13,6 +13,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 rand = "0.3"
+order-stat = "0.1.3"
 
 [dependencies.strsim]
 version = "0.5"
