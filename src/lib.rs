@@ -255,7 +255,17 @@ impl<T, D: DistFn<T>> VpTree<T, D> {
 
         let origin = origin.borrow();
 
-        KnnVisitor::new(self, origin, k)
+        Visitor::new(self, origin, KNearest(k))
+            .visit_all()
+            .into_vec()
+    }
+
+    pub fn within_radius<'t, O: Borrow<T>>(&'t self, origin: O, radius: u64) -> Vec<Neighbor<'t, T>> {
+        self.sanity_check();
+
+        let origin = origin.borrow();
+
+        Visitor::new(self, origin, WithinRadius(radius))
             .visit_all()
             .into_vec()
     }
@@ -279,7 +289,6 @@ impl<T: fmt::Debug, D: DistFn<T>> fmt::Debug for VpTree<T, D> {
 
         try!(writeln!(f, "Items: {:?}", self.items));
 
-
         if self.nodes.len() == self.items.len() {
             try!(f.write_str("Structure:\n"));
             print::TreePrinter::new(self).print(f)
@@ -301,33 +310,64 @@ struct Node {
     threshold: u64,
 }
 
-struct KnnVisitor<'t, 'o, T: 't + 'o, D: 't> {
+trait VisitKind {
+    fn should_pop<T>(&self, heap: &BinaryHeap<Neighbor<T>>) -> bool;
+
+    fn prealloc_cap(&self) -> usize {
+        0
+    }
+
+    fn should_visit(&self) -> bool { true }
+}
+
+struct KNearest(usize);
+
+impl VisitKind for KNearest {
+    fn should_pop<T>(&self, heap: &BinaryHeap<Neighbor<T>>) -> bool {
+        heap.len() == self.0
+    }
+
+    fn prealloc_cap(&self) -> usize {
+        if self.0 > 0 {
+            self.0 + 2
+        } else {
+            0
+        }
+    }
+
+    fn should_visit(&self) -> bool { self.0 > 0 }
+}
+
+struct WithinRadius(u64);
+
+impl VisitKind for WithinRadius {
+    fn should_pop<T>(&self, heap: &BinaryHeap<Neighbor<T>>) -> bool {
+        heap.peek().map_or(false, |neighbor| neighbor.dist > self.0)
+    }
+}
+
+struct Visitor<'t, 'o, T: 't + 'o, D: 't, V> {
     tree: &'t VpTree<T, D>,
     origin: &'o T,
     heap: BinaryHeap<Neighbor<'t, T>>,
-    k: usize,
+    visit_kind: V,
     radius: u64,
 }
 
-impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D>
-    where D: DistFn<T>
-{
-    fn new(tree: &'t VpTree<T, D>, origin: &'o T, k: usize) -> Self {
-        KnnVisitor {
+impl<'t, 'o, T: 't + 'o, D: 't, V> Visitor<'t, 'o, T, D, V> where D: DistFn<T>, V: VisitKind {
+    fn new(tree: &'t VpTree<T, D>, origin: &'o T, visit_kind: V) -> Self {
+        Visitor {
             tree: tree,
             origin: origin,
             // Preallocate enough scratch space but don't allocate if `k = 0`
-            heap: if k > 0 {
-                BinaryHeap::with_capacity(k + 2)
-            } else {
-                BinaryHeap::new()
-            },
-            k: k,
+            heap: BinaryHeap::with_capacity(visit_kind.prealloc_cap()),
+            visit_kind: visit_kind,
             radius: ::std::u64::MAX,
         }
     }
+
     fn visit_all(mut self) -> Self {
-        if self.k > 0 && self.tree.nodes.len() > 0 {
+        if self.visit_kind.should_visit() && self.tree.nodes.len() > 0 {
             self.visit(0);
         }
 
@@ -351,14 +391,14 @@ impl<'t, 'o, T: 't + 'o, D: 't> KnnVisitor<'t, 'o, T, D>
                 dist: dist_to_cur,
             };
 
-            if self.heap.len() == self.k {
+            if self.visit_kind.should_pop(&self.heap) {
                 // Equivalent to .push_pop(), k is assured to be > 0
                 *self.heap.peek_mut().unwrap() = neighbor;
             } else {
                 self.heap.push(neighbor);
             }
 
-            if self.heap.len() == self.k {
+            if self.visit_kind.should_pop(&self.heap) {
                 self.radius = self.heap.peek().unwrap().dist;
             }
         }
@@ -435,15 +475,15 @@ mod test {
     const ORIGIN: i32 = 4;
     const NEIGHBORS: &'static [i32] = &[2, 3, 4, 5, 6];
 
+    const RADIUS: u64 = 2;
+
     #[test]
     fn test_k_nearest() {
         let tree = VpTree::new(0i32..MAX_TREE_VAL);
 
         println!("Tree: {:?}", tree);
 
-        let nearest: Vec<_> = tree.k_nearest(&ORIGIN, NEIGHBORS.len())
-            .into_iter()
-            .collect();
+        let nearest: Vec<_> = tree.k_nearest(&ORIGIN, NEIGHBORS.len());
 
         println!("Nearest: {:?}", nearest);
 
@@ -451,6 +491,23 @@ mod test {
             assert!(NEIGHBORS.contains(&neighbor.item),
                     "Was not expecting {:?}",
                     neighbor);
+        }
+    }
+
+    #[test]
+    fn test_within_radius() {
+        let tree = VpTree::new(0i32..MAX_TREE_VAL);
+
+        println!("Tree: {:?}", tree);
+
+        let nearest: Vec<_> = tree.within_radius(&ORIGIN, RADIUS);
+
+        println!("Within radius ({}): {:?}", RADIUS, nearest);
+
+        for neighbor in nearest {
+            assert!(NEIGHBORS.contains(&neighbor.item),
+            "Was not expecting {:?}",
+            neighbor);
         }
     }
 }
